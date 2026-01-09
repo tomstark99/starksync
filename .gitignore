@@ -1,0 +1,11 @@
+# intellij
+.idea
+
+# starksync - properties
+.initial_setup_done
+.rsync_commands
+
+# starksync - runtime
+log
+.gnome_config
+.successful_syncs
