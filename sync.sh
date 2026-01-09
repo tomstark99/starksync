@@ -4,7 +4,7 @@
 passwd=$1
 masterhost=
 rootdir=$HOME/.starksync
-logfile=$rootdir/.lastsync.log
+logfile=$rootdir/log/.starksync_$(date +"%m%d%Y-%H%M%S").log
 
 no_colour="\e[0m"
 white="\e[30;107m"
@@ -40,18 +40,23 @@ gpg_setup_and_encrypt() {
 }
 
 install_deps() {
-	(run_sudo yum -y install sshpass >> $logfile 2>&1) || catch "installing sshpass" "$?"
+  if command -v "$1" &>/dev/null
+  then
+    echo "command [$1] already installed" >> $logfile
+  else
+    (run_sudo yum -y install $1 >> $logfile 2>&1) || catch "installing $1" "$?"
+  fi
 }
 
 try_initial_setup() {
 	if [ ! -f $HOME/.passwd.gpg ]
 	then
 		gpg_setup_and_encrypt
-		install_deps
+		install_deps "sshpass"
 	fi
 	if [ ! -d $rootdir ]
 	then
-		mkdir -p $rootdir
+		mkdir -p $rootdir/log
 	fi
 	touch $rootdir/.initial_setup_done
 }
@@ -168,26 +173,31 @@ do_postsync() {
 	ack_cmd="(gpg -d -q $HOME/.passwd.gpg | sshpass $rsync_cmd >> $logfile 2>&1)"
 	logcmd "$ack_cmd"
 	eval $ack_cmd || catch "sending successful sync ack" "$?"
-	################## announce sync finished
-	printf "[ sync finished in $((${SECONDS}-${INIT_TIME})) seconds ]\n"
 }
 
 _entrypoint() {
-  rm $logfile > /dev/null 2>&1
-	echo "sync started: $(date)" > $logfile
-	if [ ! -f $rootdir/.initial_setup_done ]
-	then
-		try_initial_setup
-	fi
-	do_presync
-	if [[ "$sync_rsync" == "true" || "$sync_remmina" == "true" ]]
-	then
-		do_argsync
-	else
-		do_sync
-		do_gnomesync
-	fi
-	do_postsync
+  if [[ "$HOSTNAME" == *"$masterhost"* ]]
+  then
+    catch "starting sync, the master host cannot sync with itself" "1"
+  else
+    mkdir -p $rootdir/log
+    echo "sync started: $(date)" > $logfile
+    if [ ! -f $rootdir/.initial_setup_done ]
+    then
+      try_initial_setup
+    fi
+    do_presync
+    if [[ "$sync_rsync" == "true" || "$sync_remmina" == "true" ]]
+    then
+      do_argsync
+    else
+      do_sync
+      do_gnomesync
+      do_postsync
+    fi
+	  ################## announce sync finished
+    printf "[ starksync finished in $((${SECONDS}-${INIT_TIME})) seconds ]\n"
+  fi
 }
 
 md2man() {
